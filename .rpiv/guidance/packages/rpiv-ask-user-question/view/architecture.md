@@ -17,7 +17,7 @@ props-adapter.ts          — QuestionnairePropsAdapter (fan-out + invalidate())
 tab-components.ts         — TabComponents per-tab bundle record (incl. the `bodyHeights(width) → {current, max}` thunk feeding the dialog's height closures)
 tab-content-strategy.ts   — TabContentStrategy + QuestionTabStrategy / SubmitTabStrategy + OneLineClippedText
 dialog-builder.ts         — DialogView class + hint/heading constants + DialogProps/DialogConfig.
-                            Residual height-equalizer computed inline as `spacerRows` in `render()`.
+                            Natural-height chrome and residual height-equalizer.
 components/               — Leaf renderers (see .rpiv/guidance/packages/rpiv-ask-user-question/view/components/architecture.md)
 ```
 
@@ -67,28 +67,32 @@ class QuestionTabStrategy implements TabContentStrategy {
     // hint via OneLineClippedText (not Text): the collapse affordance would word-wrap and break footerRowCount=2
     footerRows(state) { return [Spacer, OneLineClippedText(hint)]; }
 }
-// SubmitTabStrategy: footerRowCount = 5; pads missing picker with Spacer rows to preserve count; mounts the
+// SubmitTabStrategy: footerRowCount = 5 (at widths where the warning prompt fits one line); pads missing picker with Spacer rows to preserve count; mounts the
 // shared notes Editor in midRows for the global note (GLOBAL_NOTES_HEADER) + a committed-note review entry
 // gated on !state.notesVisible; the submit hint row adds the global-note key while the editor is closed
 ```
 
-## DialogView Chrome Order (always)
+## DialogView Chrome Order
 top `DynamicBorder` → (if `isMulti`) `tabBar` → `Spacer(1)` → strategy `headingRows` → `bodyComponent` → `Spacer(1)` → `midRows` → bottom `DynamicBorder` → `footerRows` → inline residual `spacerRows`. `maxFooterRowCount` cached at construction as `max(questionStrategy.footerRowCount, submitStrategy?.footerRowCount ?? 0)`. The footer hint interpolates the configured `collapseKey` (`DialogConfig.collapseKey`, construction-time config — not canonical state) into `HINT_PART_COLLAPSE_TEMPLATE` via `{key}`/`KEY_PLACEHOLDER` and omits the collapse part when the key is `"off"`; when `state.collapsed`, the session swaps in `COLLAPSED_HINT_TEMPLATE` interpolated the same way.
 
 ## Residual Spacer (inline in `render()`)
 ```ts
-// Emits Math.max(0, ...) blank rows AFTER the footer (no overflow path only).
+// Emits Math.max(0, ...) blank rows AFTER the footer.
 const spacerRows = Math.max(0,
     this.config.getBodyHeight(width) + this.maxFooterRowCount
     - strategy.bodyHeight(width, state) - strategy.footerRowCount);
 ```
-Absorbs footer-row-count asymmetry across tabs — total dialog height equals across Question and Submit tabs without inflating natural body height. Computed inline in `DialogView.render` (no separate component); under terminal overflow it is dropped in favour of the 3-region scroll partition.
+Absorbs footer-row-count asymmetry across tabs. The dialog renders all natural
+content and residual rows regardless of terminal height. Only width is clamped.
+There is no height getter, budget policy, compact layout, or pane scroll state.
+The host owns viewport behavior. Preview components use their standard bordered
+side-by-side/stacked renderer, including existing preview-box truncation.
 
 ## Architectural Boundaries
 - **Only `PropsAdapter` calls `setProps`** — `DialogView` never writes sibling props; it only reads `liveProps`
-- **`DialogView.invalidate()` is a no-op** — cache busts go through the adapter's registry walk
+- **`DialogView.invalidate()` is a no-op** — cache busts go through the adapter's registry walk; the dialog has no render cache
 - **NO `string.length` width math** — chrome uses `Spacer(n)` + row-counted residual; body height via `render(w).length` or injected `getBodyHeight`/`getCurrentBodyHeight` thunks
-- **Strategy `footerRowCount` is invariant** — Submit pads with `Spacer` to preserve 5 rows
+- **Strategy `footerRowCount` describes the one-line regime** — Submit pads a missing picker with `Spacer`; its warning prompt may wrap naturally on narrow widths
 - **Selectors injected via `select:`** keep view free of reducer/state-shape coupling
 
 <important if="you are adding a new view component to the questionnaire dialog">

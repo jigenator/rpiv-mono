@@ -4,7 +4,7 @@ import { COLLAPSE_KEY_OFF, formatKeySpecForDisplay } from "../config.js";
 import { t } from "../state/i18n-bridge.js";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
-import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
+import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
 import {
 	type DialogState,
 	HINT_PART_CANCEL,
@@ -78,9 +78,6 @@ export interface TabContentStrategy {
 
 	/** Footer rows below the bottom border. Rendered row count MUST equal `footerRowCount`. */
 	footerRows(state: DialogState): Component[];
-
-	/** Row range of the focused item within the body's rendered output, or undefined if no interactive focus. */
-	focusedItemRowRange(width: number, state: DialogState): [number, number] | undefined;
 }
 
 export interface QuestionTabStrategyConfig {
@@ -149,13 +146,6 @@ export class QuestionTabStrategy implements TabContentStrategy {
 				1,
 			),
 		];
-	}
-
-	focusedItemRowRange(width: number, state: DialogState): [number, number] | undefined {
-		const question = this.config.questions[state.currentTab];
-		const mso = this.config.tabsByIndex[state.currentTab]?.multiSelect;
-		if (question?.multiSelect === true && mso) return mso.focusedItemRowRange(width);
-		return (this.config.getPreviewPane() as unknown as PreviewPane).focusedItemRowRange(width);
 	}
 }
 
@@ -259,10 +249,6 @@ export class SubmitTabStrategy implements TabContentStrategy {
 		out.push(new OneLineClippedText(this.config.theme.fg("dim", buildSubmitHintText(state)), 1));
 		return out;
 	}
-
-	focusedItemRowRange(_width: number, _state: DialogState): [number, number] | undefined {
-		return undefined;
-	}
 }
 
 /**
@@ -276,8 +262,8 @@ export class SubmitTabStrategy implements TabContentStrategy {
  * appended at the far right while input mode is active.
  *
  * The collapse part interpolates the configured `collapseKey` (display-cased)
- * and is omitted entirely when the shortcut is `"off"` — `routeKey` and the raw
- * terminal listener both refuse to collapse in that case, so advertising a key
+ * and is omitted entirely when the shortcut is `"off"` — `routeKey`
+ * refuses to collapse in that case, so advertising a key
  * would be a lie.
  */
 export function buildHintText(

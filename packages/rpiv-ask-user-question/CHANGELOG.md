@@ -7,6 +7,11 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Render `ask_user_question` in Pi's space-reserving editor area, not an overlay. Keep the standard questionnaire at natural height with width-safe rendering; leave viewport and transcript navigation to the host without terminal-height caps or custom pane scrolling.
+- Keep collapse as an optional one-row shrink with draft preservation and Kitty repeat/release protection; remove the overlay handle, hide effect, and raw terminal escape listener.
+
 ## [2.12.0] - 2026-09-30
 
 ### Fixed

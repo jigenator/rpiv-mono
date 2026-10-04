@@ -72,18 +72,16 @@ keystrokes edit the buffer, so `n` types an `n`. Pasted line breaks are preserve
 
 ## Collapse mode
 
-`Ctrl+]` gets the dialog out of the way: the overlay is marked hidden in Pi's overlay
-stack and shrinks to a single dim hint row, so the transcript it was covering becomes
-readable and chat scrolling resumes. Press the same key to bring the questionnaire back
-with your answers intact. The first time you collapse, Pi notifies you with the key to
-press — that message names your configured key.
+The questionnaire reserves space in Pi's editor area rather than covering the
+conversation. Pi's transcript navigation remains available while you answer: in
+fullscreen mode use PageUp/PageDown or the mouse wheel; in regular mode use your
+terminal's scrollback. A tall questionnaire can fill the visible terminal; collapse frees space when needed.
 
-Because Pi routes no input to a hidden overlay, the collapse key is additionally captured
-at the raw terminal level. It only acts when the questionnaire is hidden or focused, so a
-different overlay on top of it (for example `/btw`) keeps its keystrokes.
-
-While collapsed, every keystroke other than cancel is ignored, so you cannot mutate
-answers you cannot see.
+`Ctrl+]` optionally shrinks the pane to one dim hint row. Press the same key to
+restore it with answers, selections, notes, and custom-answer drafts intact. While
+shrunk, other questionnaire keys are ignored except `Esc`, which cancels. The pane
+keeps focus; it does not open the normal prompt editor. When another overlay has
+focus, Pi routes keys to that overlay instead. No raw terminal listener is installed.
 
 The default `ctrl+]` is free in Terminal.app, iTerm2, Warp, tmux, zellij and screen. On
 keyboard layouts where `]` sits on the shifted layer — Latin American `es-AR` / `es-MX`,
@@ -97,9 +95,16 @@ and a bordered monospace preview box on the right — but only when both the ter
 the dialog pane are at least 100 columns wide. Below that, the preview stacks underneath
 the options instead.
 
-When the dialog is taller than the terminal, the body scrolls between a sticky heading and
-a sticky footer, and an overflow indicator shows which direction is clipped: `↑` for
-content above, `↓` for content below, `↕` for both.
+The questionnaire renders at its natural height, including long questions and option
+lists. It does not reserve a fixed fraction of the terminal, crop to terminal rows,
+or replace the standard layout with a compact scrolling view. Preview boxes retain
+their normal side-by-side/stacked layout and existing hidden-lines indicator.
+
+Pi owns the viewport and transcript navigation; there are no questionnaire-specific
+scroll keys. A tall questionnaire can exceed the visible terminal and leave little
+or no transcript on screen. Use host/terminal scrollback where available or the
+optional collapse shortcut to free space; the package does not provide a separate
+pane viewport. Resizing reflows content by width without changing answers or drafts.
 
 The footer hint line adapts to context — it drops the notes hint and appends the
 `Shift+Enter` newline hint whenever a text editor has the keyboard, with `Ctrl+U` still at

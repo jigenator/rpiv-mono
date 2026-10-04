@@ -429,16 +429,16 @@ describe("confirmHandler — custom answer clears multiSelectChecked (mutual exc
 });
 
 describe("reduce — toggle_collapsed", () => {
-	it("flips false → true and emits set_overlay_hidden(true) so the runtime hides the overlay", () => {
+	it("flips false → true without effects", () => {
 		const r = reduce(makeState(), { kind: "toggle_collapsed" }, makeCtx());
 		expect(r.state.collapsed).toBe(true);
-		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: true }]);
+		expect(r.effects).toEqual([]);
 	});
 
-	it("flips true → false (expand round-trip) and emits set_overlay_hidden(false)", () => {
+	it("flips true → false (expand round-trip) without effects", () => {
 		const r = reduce(makeState({ collapsed: true }), { kind: "toggle_collapsed" }, makeCtx());
 		expect(r.state.collapsed).toBe(false);
-		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: false }]);
+		expect(r.effects).toEqual([]);
 	});
 
 	it("preserves orthogonal fields — collapse is a pure render-mode flip, never touches answers/optionIndex/notes", () => {
@@ -454,7 +454,7 @@ describe("reduce — toggle_collapsed", () => {
 		expect(r.state.notesVisible).toBe(true);
 		expect(r.state.notesDraft).toBe("in-flight");
 		expect(r.state.answers).toBe(answers);
-		expect(r.effects).toEqual([{ kind: "set_overlay_hidden", hidden: true }]);
+		expect(r.effects).toEqual([]);
 	});
 });
 

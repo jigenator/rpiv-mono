@@ -56,9 +56,20 @@ locales/                — JSON translation maps loaded via i18n-bridge at modu
 
 `PreviewPane` is a thin composer over a per-question width-keyed markdown cache, a pure layout decider (side-by-side vs stacked + column widths), a pure bordered-box renderer, and the options selector. Layout mode is decided once and threaded through height + render — no width-derived re-derivation.
 
-## Collapse Mode
+## Editor-Area Pane and Collapse
 
-The shortcut is configurable via the `collapseKey` config field (default `ctrl+]`; `"off"` disables; malformed specs fall back to the default). It dispatches `toggle_collapsed` (intercepted at the top of `routeKey`, works from every inner state) → flips `state.collapsed` and emits a `set_overlay_hidden` effect, which the session routes to `OverlayHandle.setHidden` — the overlay is fully hidden (chat scrolling and editor focus resume; Esc does not cancel while hidden). Because pi-tui delivers no input to a hidden overlay, `execute()` registers a raw terminal listener for the same key to re-expand (`registerCollapseKeyListener`, `ask-user-question.ts:152-186`, registered `:363`) — it defers when another overlay is focused and consumes Kitty key-release/repeat events without toggling. The session honours `set_overlay_hidden` only when that listener was registered (`canReopenWhileHidden`, `:367`); on hosts without raw terminal input, collapse instead shrinks the overlay to a visible one-line row that keeps focus and input routing. Source: `state/state.ts:43`, `state/key-router.ts:36,305-314`, `state/state-reducer.ts:302-305`, `state/questionnaire-session.ts:195-202`.
+`execute()` mounts `ctx.ui.custom` with `overlay: false`, replacing Pi's editor area
+while reserving space below the transcript. The dialog renders its standard content
+at natural height, including cross-tab residual padding, with width-clipped output.
+There is no terminal-row getter, height budget, compact overflow path, or custom
+pane scrolling. Native and SDK hosts own their viewport; a tall questionnaire can
+exceed the visible terminal. Normal preview layout and preview-box limits remain.
+
+`collapseKey` (default `ctrl+]`, `"off"` disables) dispatches `toggle_collapsed` through
+normal focused-component input. The reducer only flips `state.collapsed`; the
+session renders one width-clipped row and preserves all buffers. Kitty repeat and
+release events cannot re-toggle or leak into inline editing. There is no raw input
+listener, overlay handle, hide effect, or external reopen entry point.
 
 ## Execution Modes & Load Resilience
 

@@ -123,7 +123,6 @@ class QuestionnaireBuilder {
 	private readonly notesInput: Editor;
 	private readonly inlineInput: Editor;
 	private readonly getTerminalWidth = () => this.tui.terminal.columns;
-	private readonly getTerminalRows = () => this.tui.terminal.rows;
 
 	constructor(config: QuestionnaireBuildConfig) {
 		this.tui = config.tui;
@@ -266,7 +265,6 @@ class QuestionnaireBuilder {
 				submitPicker,
 				getBodyHeight: heights.global,
 				getCurrentBodyHeight: heights.current,
-				getTerminalRows: this.getTerminalRows,
 				collapseKey: this.collapseKey,
 			},
 			{ state: this.initialState, activePreviewPane: this.pickInitialActivePreview(tabs) },

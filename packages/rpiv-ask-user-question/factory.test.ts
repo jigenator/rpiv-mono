@@ -169,8 +169,7 @@ describe("ask_user_question — factory driver (real pi-tui keybindings)", () =>
 		const ctx = { hasUI: true, ui: { custom } } as never;
 		await tool.execute?.("tc", threeOptionParams as never, undefined as never, undefined as never, ctx);
 
-		// Collapse shrinks the entire dialog to one row — pi-tui sizes the overlay to
-		// `min(lines.length, maxHeight)`, so a 1-line render frees the transcript above.
+		// Collapse shrinks the reserved editor pane to one row without changing focus.
 		expect(collapsedLines).toHaveLength(1);
 		expect(collapsedLines[0]).toContain("Ctrl+] to expand");
 		expect(collapsedLines[0]).toContain("Esc to cancel");

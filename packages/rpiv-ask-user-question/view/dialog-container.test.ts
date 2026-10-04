@@ -127,7 +127,6 @@ function makeConfig(over: MakeConfigOverrides = {}): DialogParts {
 				if (q?.multiSelect === true && mso) return (mso as unknown as Component).render(w).length;
 				return (previewPane as unknown as Component).render(w).length;
 			}),
-		getTerminalRows: over.getTerminalRows ?? (() => 24),
 		collapseKey: over.collapseKey ?? "ctrl+]",
 	};
 	const initialProps: DialogProps = over.initialProps ?? { state, activePreviewPane: previewPane };
@@ -635,10 +634,8 @@ describe("makeDialog — width safety", () => {
 
 describe("makeDialog — body residual padding", () => {
 	it("dialog total grows by (getBodyHeight delta) when getCurrentBodyHeight stays constant", () => {
-		// Use a tall terminal so the no-overflow path is exercised (where residual padding applies).
-		const tall = { getTerminalRows: () => 200 } as const;
-		const a = makeDialog(makeConfig({ ...tall, getBodyHeight: () => 5, getCurrentBodyHeight: () => 1 })).render(80);
-		const b = makeDialog(makeConfig({ ...tall, getBodyHeight: () => 20, getCurrentBodyHeight: () => 1 })).render(80);
+		const a = makeDialog(makeConfig({ getBodyHeight: () => 5, getCurrentBodyHeight: () => 1 })).render(80);
+		const b = makeDialog(makeConfig({ getBodyHeight: () => 20, getCurrentBodyHeight: () => 1 })).render(80);
 		expect(b.length - a.length).toBe(15);
 	});
 
@@ -695,17 +692,8 @@ describe("makeDialog — body residual padding", () => {
 		const multiSelectByTab: ReadonlyArray<MultiSelectView | undefined> = [undefined, mso];
 		const getBodyHeight = (w: number) => Math.max(1, (mso as unknown as Component).render(w).length);
 
-		// The "Type something." row on multi-select tabs adds (+1 to MultiSelectView
-		// height), pushing this 5-option multi tab's body from 11 → 12 and the full dialog past
-		// the prior 24-row default into the overflow regime (which disables the residual spacer
-		// that equalizes cross-tab height). Give the dialog enough rows that both tabs render
-		// without overflow so the residual spacer stays active and the heights match.
-		const dlgTab0 = makeDialog(
-			makeConfig({ questions, state: stateTab0, multiSelectByTab, getBodyHeight, getTerminalRows: () => 32 }),
-		);
-		const dlgTab1 = makeDialog(
-			makeConfig({ questions, state: stateTab1, multiSelectByTab, getBodyHeight, getTerminalRows: () => 32 }),
-		);
+		const dlgTab0 = makeDialog(makeConfig({ questions, state: stateTab0, multiSelectByTab, getBodyHeight }));
+		const dlgTab1 = makeDialog(makeConfig({ questions, state: stateTab1, multiSelectByTab, getBodyHeight }));
 		expect(dlgTab0.render(120).length).toBe(dlgTab1.render(120).length);
 	});
 });

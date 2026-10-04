@@ -1,7 +1,7 @@
-import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { TUI } from "@earendil-works/pi-tui";
+import { initTheme, type Theme } from "@earendil-works/pi-coding-agent";
+import { CURSOR_MARKER, type Terminal, TUI, visibleWidth } from "@earendil-works/pi-tui";
 import { makeTheme } from "@juicesharp/rpiv-test-utils";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
 import { QuestionnaireSession } from "./questionnaire-session.js";
@@ -67,6 +67,9 @@ const keybindings = {
 };
 
 interface SessionTestOptions {
+	tui?: TUI;
+	terminal?: { columns: number; rows: number };
+	collapseKey?: string;
 	params?: QuestionParams;
 	itemsByTab?: WrappingSelectItem[][];
 	editInput?: (value: string) => Promise<string | undefined>;
@@ -77,15 +80,16 @@ function makeSession(options: SessionTestOptions = {}) {
 	const sessionParams = options.params ?? params;
 	const done = vi.fn<(result: QuestionnaireResult) => void>();
 	const session = new QuestionnaireSession({
-		tui: { terminal: { columns: 120, rows: 40 }, requestRender: vi.fn() } as unknown as TUI,
+		tui:
+			options.tui ??
+			({ terminal: options.terminal ?? { columns: 120, rows: 40 }, requestRender: vi.fn() } as unknown as TUI),
 		theme: makeTheme() as unknown as Theme,
 		params: sessionParams,
 		itemsByTab: options.itemsByTab ?? itemsFor(sessionParams),
 		done,
 		keybindings: options.keybindings ?? keybindings,
 		editInput: options.editInput ?? (async () => undefined),
-		collapseKey: "off",
-		canReopenWhileHidden: false,
+		collapseKey: options.collapseKey ?? "off",
 	});
 	return { session, done };
 }
@@ -298,17 +302,243 @@ describe("QuestionnaireSession — custom-answer drafts", () => {
 	});
 });
 
-describe("QuestionnaireSession — collapsed row with collapseKey 'off'", () => {
-	it("renders the cancel-only line, never a literal 'Off to expand' (#176)", () => {
-		// The router and raw listener never collapse when off, but
-		// toggleCollapsedExternal() is a public ungated entry — the collapsed row
-		// must not advertise a disabled shortcut if a caller forces it.
+describe("QuestionnaireSession — collapse disabled", () => {
+	it("does not shrink when collapseKey is off", () => {
 		const { session } = makeSession();
-		session.toggleCollapsedExternal();
-		const collapsed = session.component.render(120);
-		expect(collapsed).toHaveLength(1);
-		expect(collapsed[0]).toContain("Esc to cancel");
-		expect(collapsed[0]).not.toContain("to expand");
-		expect(collapsed[0]).not.toContain("Off");
+		const before = session.component.render(120);
+		session.dispatch("\x1d");
+		expect(session.component.render(120)).toEqual(before);
+	});
+});
+
+describe("QuestionnaireSession — natural-height pane and resize", () => {
+	it("renders independently of terminal height while respecting narrow widths", () => {
+		const terminal = { columns: 120, rows: 40 };
+		const tallParams: QuestionParams = {
+			questions: [
+				{
+					...params.questions[0]!,
+					question: "A long question wrapped over many rows. ".repeat(10),
+					options: params.questions[0]!.options.map((option) => ({
+						...option,
+						preview: Array(80).fill("preview content").join("\n"),
+					})),
+				},
+			],
+		};
+		const { session, done } = makeSession({ params: tallParams, terminal });
+		const initial = session.component.render(80);
+		expect(initial.length).toBeGreaterThan(24);
+		for (const rows of [40, 24, 12, 6, 2, 1, 40]) {
+			terminal.rows = rows;
+			terminal.columns = 80;
+			expect(session.component.render(80)).toEqual(initial);
+			for (const width of [120, 80, 20, 10, 2, 1, 0]) {
+				terminal.columns = width;
+				const lines = session.component.render(width);
+				for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			}
+		}
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith(
+			expect.objectContaining({
+				cancelled: false,
+				answers: [expect.objectContaining({ preview: tallParams.questions[0]!.options[0]!.preview })],
+			}),
+		);
+	});
+
+	it("keeps multiline input cursor and notes visible while resizing, preserving both drafts", () => {
+		const terminal = { columns: 80, rows: 24 };
+		const { session, done } = makeSession({ terminal, collapseKey: "ctrl+]" });
+		session.component.focused = true;
+		session.dispatch("n");
+		for (let i = 0; i < 8; i++) {
+			session.dispatch(`note${i}`);
+			session.dispatch(SHIFT_ENTER);
+		}
+		for (const rows of [24, 12, 6, 40]) {
+			terminal.rows = rows;
+			expect(session.component.render(80).join("\n")).toContain(CURSOR_MARKER);
+		}
+		session.component.focused = false;
+		expect(session.component.render(80).join("\n")).not.toContain(CURSOR_MARKER);
+		session.component.focused = true;
+		session.dispatch("\x1d");
+		session.dispatch("unseen");
+		session.dispatch("\x1d");
+		session.dispatch(ENTER);
+		focusCustomAnswer(session);
+		for (let i = 0; i < 8; i++) {
+			session.dispatch(`draft${i}`);
+			session.dispatch(SHIFT_ENTER);
+		}
+		for (const rows of [24, 12, 6, 40]) {
+			terminal.rows = rows;
+			expect(session.component.render(80).join("\n")).toContain(CURSOR_MARKER);
+		}
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith(
+			expect.objectContaining({
+				answers: [
+					expect.objectContaining({
+						answer: Array.from({ length: 8 }, (_, i) => `draft${i}\n`).join(""),
+						notes: Array.from({ length: 8 }, (_, i) => `note${i}`).join("\n"),
+					}),
+				],
+			}),
+		);
+	});
+
+	it.each([1, 2, 4, 6, 12, 24])("keeps the Submit picker actionable at %i terminal rows", (rows) => {
+		const { session, done } = makeSession({
+			terminal: { columns: 40, rows },
+			params: {
+				questions: [params.questions[0]!, { ...params.questions[0]!, question: "Second?" }],
+			},
+		});
+		session.dispatch(ENTER);
+		session.dispatch(ENTER);
+		expect(session.component.render(40).join("\n")).toContain("Submit answers");
+		session.dispatch(DOWN);
+		expect(session.component.render(40).join("\n")).toContain("Cancel");
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith(expect.objectContaining({ cancelled: true, answers: expect.any(Array) }));
+	});
+});
+
+it("Pi TUI routes collapse to the focused overlay, then restores the pending pane", () => {
+	let input!: (data: string) => void;
+	const terminal: Terminal = {
+		columns: 120,
+		rows: 24,
+		kittyProtocolActive: false,
+		start: (onInput) => {
+			input = onInput;
+		},
+		stop: vi.fn(),
+		drainInput: async () => {},
+		write: vi.fn(),
+		moveBy: vi.fn(),
+		hideCursor: vi.fn(),
+		showCursor: vi.fn(),
+		clearLine: vi.fn(),
+		clearFromCursor: vi.fn(),
+		clearScreen: vi.fn(),
+		setTitle: vi.fn(),
+		setProgress: vi.fn(),
+	};
+	const tui = new TUI(terminal);
+	vi.spyOn(tui, "requestRender").mockImplementation(() => {});
+	const { session, done } = makeSession({ tui, collapseKey: "ctrl+]" });
+	tui.addChild(session.component);
+	tui.setFocus(session.component);
+	tui.start();
+	try {
+		input("n");
+		input("note draft");
+		const before = session.component.render(120);
+		const otherInput = vi.fn();
+		const overlay = tui.showOverlay({ render: () => ["other overlay"], invalidate() {}, handleInput: otherInput });
+		expect(session.component.focused).toBe(false);
+		input("\x1d");
+		expect(otherInput).toHaveBeenCalledWith("\x1d");
+		expect(session.component.render(120).length).toBeGreaterThan(1);
+		overlay.hide();
+		expect(session.component.focused).toBe(true);
+		expect(session.component.render(120)).toEqual(before);
+		input("\x1d");
+		expect(session.component.render(120)).toHaveLength(1);
+		input("\x1d");
+		input(ENTER);
+		input(ENTER);
+		expect(done).toHaveBeenCalledWith(
+			expect.objectContaining({ answers: [expect.objectContaining({ notes: "note draft" })] }),
+		);
+	} finally {
+		tui.stop();
+	}
+});
+
+function previewParams(preview: string): QuestionParams {
+	return {
+		questions: [
+			{
+				question: "Which layout should we use?",
+				header: "Layout",
+				options: [
+					{ label: "Alpha", description: "First layout", preview },
+					{ label: "Beta", description: "Second layout", preview: "BETA-PREVIEW" },
+				],
+			},
+		],
+	};
+}
+
+describe("QuestionnaireSession — natural questionnaire content", () => {
+	beforeAll(() => initTheme());
+	it("keeps the standard question, options and selected preview layout", () => {
+		const { session, done } = makeSession({
+			params: previewParams("ALPHA-PREVIEW"),
+			terminal: { columns: 80, rows: 24 },
+		});
+		const initial = session.component.render(80);
+		expect(initial[0]).toMatch(/─/);
+		for (const text of ["Which layout should we use?", "Alpha", "Beta", "ALPHA-PREVIEW", "Type something."]) {
+			expect(initial.join("\n")).toContain(text);
+		}
+		expect(initial.join("\n")).not.toContain("Alt+PgUp/PgDn");
+		session.dispatch(DOWN);
+		const second = session.component.render(80).join("\n");
+		for (const text of ["Which layout should we use?", "Beta", "BETA-PREVIEW"]) expect(second).toContain(text);
+		expect(second).not.toContain("ALPHA-PREVIEW");
+		expect(done).not.toHaveBeenCalled();
+	});
+
+	it("renders every long question/option line in one pass without compacting or pane scrolling", () => {
+		const value = previewParams("PREVIEW");
+		value.questions[0]!.question = Array.from({ length: 40 }, (_, i) => `QUESTION-${i}-END`).join("\n");
+		value.questions[0]!.options[0]!.description = Array.from({ length: 40 }, (_, i) => `DESCRIPTION-${i}-END`).join(
+			"\n",
+		);
+		const { session, done } = makeSession({ params: value, terminal: { columns: 80, rows: 20 } });
+		const lines = session.component.render(80);
+		expect(lines.length).toBeGreaterThan(80);
+		for (let i = 0; i < 40; i++) {
+			expect(lines.join("\n")).toContain(`QUESTION-${i}-END`);
+			expect(lines.join("\n")).toContain(`DESCRIPTION-${i}-END`);
+		}
+		for (const text of ["Alpha", "Beta", "Type something.", "Enter to select"])
+			expect(lines.join("\n")).toContain(text);
+		expect(done).not.toHaveBeenCalled();
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith(
+			expect.objectContaining({ answers: [expect.objectContaining({ answer: "Alpha", preview: "PREVIEW" })] }),
+		);
+	});
+
+	it("has no custom PageUp/PageDown or Alt+PageUp/PageDown handling", () => {
+		const { session, done } = makeSession({
+			params: previewParams("long preview\n".repeat(60)),
+			terminal: { columns: 80, rows: 24 },
+		});
+		const before = session.component.render(80);
+		for (const key of ["\x1b[5~", "\x1b[6~", "\x1b[5;3~", "\x1b[6;3~", "\x1b[6;3:3~"]) session.dispatch(key);
+		expect(session.component.render(80)).toEqual(before);
+		expect(done).not.toHaveBeenCalled();
+	});
+
+	it("retains the full incomplete-answer warning and Submit/Cancel on a short host", () => {
+		const value = previewParams("PREVIEW");
+		value.questions.push({ ...value.questions[0]!, header: "Second", question: "Second question?" });
+		const { session, done } = makeSession({ params: value, terminal: { columns: 80, rows: 5 } });
+		session.dispatch(TAB);
+		session.dispatch(TAB);
+		const lines = session.component.render(80);
+		expect(lines.length).toBeGreaterThan(5);
+		for (const text of ["Answer remaining questions", "Layout", "Second", "Submit answers", "Cancel"])
+			expect(lines.join("\n")).toContain(text);
+		session.dispatch(ENTER);
+		expect(done).toHaveBeenCalledWith({ answers: [], cancelled: false });
 	});
 });

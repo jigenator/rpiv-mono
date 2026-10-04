@@ -1,5 +1,5 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type Editor, Spacer } from "@earendil-works/pi-tui";
+import { type Component, Container, type Editor, Spacer, truncateToWidth } from "@earendil-works/pi-tui";
 import { DEFAULT_COLLAPSE_KEY, formatKeySpecForDisplay } from "../config.js";
 import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
@@ -57,51 +57,6 @@ export const REVIEW_HEADING = "Review your answers";
 export const READY_PROMPT = "Ready to submit your answers?";
 export const INCOMPLETE_WARNING_PREFIX = "⚠ Answer remaining questions before submitting:";
 
-const OVERFLOW_UP = "↑";
-const OVERFLOW_DOWN = "↓";
-const OVERFLOW_BOTH = "↕";
-
-/** No-overflow path: append the residual spacer rows after the footer. */
-function renderFitsTerminal(natural: string[], spacerRows: number): string[] {
-	return spacerRows > 0 ? [...natural, ...Array<string>(spacerRows).fill("")] : natural;
-}
-
-/** Terminal too small for any middle content — show just chrome, hard-clamped to termRows. */
-function renderChromeOnly(natural: string[], topFixed: number, bottomFixed: number, termRows: number): string[] {
-	const chromeOnly = [...natural.slice(0, topFixed), ...natural.slice(natural.length - bottomFixed)];
-	return chromeOnly.length > termRows ? chromeOnly.slice(0, termRows) : chromeOnly;
-}
-
-/** Scroll window start, centered on the focused option; top-anchored when there is no interactive focus. */
-function computeScrollStart(
-	bodyRange: [number, number] | undefined,
-	headingCount: number,
-	availableMiddle: number,
-	middleRows: number,
-): number {
-	if (!bodyRange) return 0;
-	const focusedRowInMiddle = headingCount + bodyRange[0];
-	const focusedHeight = bodyRange[1] - bodyRange[0];
-	// Center the focused item vertically in the available middle space.
-	const idealStart = focusedRowInMiddle - Math.floor(Math.max(0, availableMiddle - focusedHeight) / 2);
-	return Math.max(0, Math.min(idealStart, middleRows - availableMiddle));
-}
-
-/** Mark the scroll window edges with overflow arrows; combined ↕ on a single-row middle. */
-function decorateOverflow(scrollableMiddle: string[], hasUp: boolean, hasDown: boolean, theme: Theme): void {
-	if (hasUp && hasDown && scrollableMiddle.length === 1) {
-		// Single-row middle: combined ↕ avoids the prior collision where ↓ overwrote ↑.
-		scrollableMiddle[0] = theme.fg("dim", OVERFLOW_BOTH);
-		return;
-	}
-	if (hasUp && scrollableMiddle.length > 0) {
-		scrollableMiddle[0] = theme.fg("dim", OVERFLOW_UP);
-	}
-	if (hasDown && scrollableMiddle.length > 0) {
-		scrollableMiddle[scrollableMiddle.length - 1] = theme.fg("dim", OVERFLOW_DOWN);
-	}
-}
-
 export type DialogState = QuestionnaireState;
 
 /** Per-tick projection of dialog state. Written by the adapter; read by the strategy thunk. */
@@ -124,8 +79,6 @@ export interface DialogConfig {
 	getBodyHeight: (width: number) => number;
 	/** Body height of the CURRENTLY active tab/option. The chrome subtracts this from `getBodyHeight` to absorb the residual OUTSIDE the bordered region. */
 	getCurrentBodyHeight: (width: number) => number;
-	/** Terminal height getter. Mirrors `getTerminalWidth` — reads `tui.terminal.rows` at render time. */
-	getTerminalRows: () => number;
 	/**
 	 * Resolved collapse/expand key spec (`resolveCollapseKey` output: `"ctrl+]"`,
 	 * `"alt+o"`, or `"off"`). Construction-time config, NOT canonical state —
@@ -186,24 +139,11 @@ export class DialogView implements StatefulView<DialogProps> {
 	invalidate(): void {}
 
 	render(width: number): string[] {
+		if (width <= 0) return [""];
 		const state = this.liveProps.state;
 		const onSubmit = this.config.isMulti && state.currentTab === this.config.questions.length;
 		const strategy = onSubmit && this.submitStrategy ? this.submitStrategy : this.questionStrategy;
-
-		// Cache heading rows (avoid double construction in render and container build).
-		const headingRowCache = strategy.headingRows(state);
-		const headingCount = headingRowCache.length;
-
-		// Build container WITHOUT residual spacer — spacer handled below based on overflow.
-		const natural = this.buildContainerFromStrategy(strategy, headingRowCache).render(width);
-
-		// Fixed region sizes (deterministic from structure).
-		// TabBar.render() returns [tabLine, ""] — always 2 rows.
-		const topFixed = 1 + (this.config.isMulti && this.config.tabBar ? 2 : 0) + 1;
-		const bottomFixed = 1 + strategy.footerRowCount;
-		const middleRows = natural.length - topFixed - bottomFixed;
-
-		// Residual spacer: equalizes total height across tabs (only needed when no overflow).
+		const natural = this.buildContainerFromStrategy(strategy, strategy.headingRows(state)).render(width);
 		const spacerRows = Math.max(
 			0,
 			this.config.getBodyHeight(width) +
@@ -211,41 +151,8 @@ export class DialogView implements StatefulView<DialogProps> {
 				strategy.bodyHeight(width, state) -
 				strategy.footerRowCount,
 		);
-
-		const termRows = this.config.getTerminalRows();
-
-		if (natural.length + spacerRows <= termRows) {
-			return renderFitsTerminal(natural, spacerRows);
-		}
-
-		// OVERFLOW — apply 3-region partition with scroll-to-focus.
-		const availableMiddle = Math.max(0, termRows - topFixed - bottomFixed);
-		if (availableMiddle === 0) {
-			return renderChromeOnly(natural, topFixed, bottomFixed, termRows);
-		}
-
-		const scrollStart = computeScrollStart(
-			strategy.focusedItemRowRange(width, state),
-			headingCount,
-			availableMiddle,
-			middleRows,
-		);
-		const scrollableMiddle = natural.slice(topFixed + scrollStart, topFixed + scrollStart + availableMiddle);
-		decorateOverflow(
-			scrollableMiddle,
-			scrollStart > 0,
-			scrollStart + availableMiddle < middleRows,
-			this.config.theme,
-		);
-
-		const result = [
-			...natural.slice(0, topFixed),
-			...scrollableMiddle,
-			...natural.slice(natural.length - bottomFixed),
-		];
-		// Safety: never exceed terminal rows (covers the availableMiddle === 0 case
-		// where topFixed + bottomFixed > termRows).
-		return result.length > termRows ? result.slice(0, termRows) : result;
+		// The host owns the viewport; preserve the full questionnaire and cross-tab padding.
+		return [...natural, ...Array<string>(spacerRows).fill("")].map((line) => truncateToWidth(line, width, ""));
 	}
 
 	private buildContainerFromStrategy(strategy: TabContentStrategy, headingRowCache: Component[]): Container {
