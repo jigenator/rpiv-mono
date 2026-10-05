@@ -13,6 +13,19 @@ Fifteen packages in one npm workspace: the **rpiv-pi** pipeline, the [Pi Agent](
 - **You want to read or hack the code** — [Repo as a repo](#repo-as-a-repo) has the layout, the conventions, and what the git hooks enforce.
 - **You want to know where this is going** — [roadmap.md](./roadmap.md) for the structured view, [Roadmap](#roadmap) for the reasoning behind it.
 
+## Personal fork: questionnaire only
+
+The root Pi manifest in [jigenator/rpiv-mono](https://github.com/jigenator/rpiv-mono) exposes only `packages/rpiv-ask-user-question/index.ts`. It does not load the pipeline, other extensions, skills, prompts, themes, or workflows. npm still installs the workspace runtime dependencies; installing them does not activate their Pi resources.
+
+Resolve the fork's `main` to an exact commit, then install that pinned source:
+
+```bash
+commit=$(git ls-remote https://github.com/jigenator/rpiv-mono.git refs/heads/main | cut -f1)
+test -n "$commit" && pi install "git:github.com/jigenator/rpiv-mono@$commit"
+```
+
+Run `/reload` in Pi afterward. To update, resolve `main` again and install the new exact-commit source; `pi update` alone does not advance a pinned commit. This fork-root install is separate from the upstream npm package instructions below.
+
 ## Packages
 
 The pipeline needs most of them. **rpiv-args** expands shell-style `$1` and `$ARGUMENTS` placeholders inside skills, **rpiv-ask-user-question** lets the model put a structured questionnaire to the user instead of guessing, **rpiv-todo** keeps a live task overlay that survives `/reload` and compaction, **rpiv-advisor** escalates to a stronger reviewer model before the agent acts, **rpiv-web-tools** gives the model web search and fetch with pluggable providers, and **rpiv-workflow** chains skills into typed multi-stage pipelines (audited JSONL state, predicate routing, per-stage output validation) and ships the `/wf` command Pi calls to run them. A few exist because I wanted them inside Pi: **rpiv-btw** is a side-conversation pattern I got used to in Claude Code, **rpiv-voice** is on-device dictation for when I'd rather talk than type, and **rpiv-warp** integrates Pi with Warp terminal's notification system, because that's where I actually run Pi. **rpiv-i18n** is the one that came from users: it started as localization for ask-user-question and grew into a small SDK. And two are plumbing rather than products: **rpiv-config** is the shared config I/O every sibling depends on, published only so those dependencies resolve, and **rpiv-telemetry** wires Pi into MLflow — auto-instruments lifecycle events and sub-agent activity so runs are inspectable after the fact — but it stays `private: true` and is loaded from a checkout, never the registry.
