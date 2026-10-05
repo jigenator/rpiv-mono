@@ -1,12 +1,14 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
-import { loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
+import { loadConfig, resolveCollapseKey, resolveHerdrStatus, validateGuidanceFields } from "./config.js";
 import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
 	type AskUserBlockedEventPayload,
 	type AskUserPromptEventPayload,
 } from "./events.js";
+import { createHerdrQuestionStatus } from "./herdr-status.js";
+import { cancelledQuestionnaire, createQuestionWait } from "./question-wait.js";
 // Static import is fine — rpc-fallback pulls only types + the i18n bridge,
 // none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
 import { type DialogUI, hasDialogUI, runRpcQuestionnaire } from "./rpc-fallback.js";
@@ -190,9 +192,9 @@ function makeSessionFactory(config: {
  * that predate ctx.mode land here: run the dialog walker when the host has the
  * primitives; otherwise tell the model the user never saw the questions.
  */
-async function resolveUndefinedResult(ctx: ExtensionContext, typed: QuestionParams) {
+async function resolveUndefinedResult(ctx: ExtensionContext, typed: QuestionParams, signal?: AbortSignal) {
 	if (hasDialogUI(ctx.ui)) {
-		return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
+		return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed, signal), typed);
 	}
 	return buildToolResult(ERROR_NO_CUSTOM_UI, { answers: [], cancelled: true, error: "no_custom_ui" });
 }
@@ -254,6 +256,17 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
+	const herdr = createHerdrQuestionStatus(pi);
+	const pending = new Set<() => void>();
+	let generation = 0;
+	const reset = async () => {
+		generation++;
+		for (const cancel of pending) cancel();
+		pending.clear();
+		await herdr.flush();
+	};
+	pi.on("session_shutdown", reset);
+	pi.on("session_start", reset);
 	pi.registerTool({
 		name: ASK_USER_QUESTION_TOOL_NAME,
 		label: "Ask User Question",
@@ -262,7 +275,8 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 		promptGuidelines: guidance.promptGuidelines ?? DEFAULT_PROMPT_GUIDELINES,
 		parameters: QuestionParamsSchema,
 
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const startedGeneration = generation;
 			// Line-terminator normalization runs once here, ahead of validation, so
 			// every downstream consumer — validator, TUI, RPC walker, envelope, prompt
 			// event — sees the same clean text (#192).
@@ -277,6 +291,8 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 					error: validation.error,
 				});
 			}
+
+			if (signal?.aborted) return buildQuestionnaireResponse(cancelledQuestionnaire(), typed);
 
 			// Emit event for external listeners (e.g., notification plugins)
 			emitAskUserPromptEvent(pi, typed);
@@ -304,30 +320,49 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			// with non-US layouts (e.g. Latin American, where `]` is shifted) can override
 			// via the `collapseKey` config field. `resolveCollapseKey` also accepts the
 			// sentinel value `"off"` to disable the shortcut entirely.
-			const collapseKey = resolveCollapseKey(loadConfig());
+			const config = loadConfig();
+			const collapseKey = resolveCollapseKey(config);
+			if (signal?.aborted || generation !== startedGeneration) {
+				return buildQuestionnaireResponse(cancelledQuestionnaire(), typed);
+			}
 
 			emitAskUserBlockedEvent(pi, true);
+			const wait = createQuestionWait(pi, signal, herdr.acquire(ctx, resolveHerdrStatus(config)));
+			pending.add(wait.cancel);
 			try {
+				if (wait.signal.aborted) return buildQuestionnaireResponse(cancelledQuestionnaire(), typed);
 				emitTerminalAttention();
-				const result = await ctx.ui.custom<QuestionnaireResult>(
-					makeSessionFactory({
-						ctx,
-						typed,
-						itemsByTab,
-						collapseKey,
-						Session: QuestionnaireSession,
-					}),
-					// Reserve space in Pi's editor dock; an overlay would block transcript scrolling.
-					{ overlay: false },
-				);
+				const result = await Promise.race([
+					ctx.ui.custom<QuestionnaireResult>(
+						(tui, theme, keybindings, done) => {
+							const finish = wait.bindUI(done);
+							// A deferred SDK factory may arrive after cancellation. Do not mount it.
+							if (wait.signal.aborted) return { render: () => [], invalidate: () => {} };
+							return makeSessionFactory({
+								ctx,
+								typed,
+								itemsByTab,
+								collapseKey,
+								Session: QuestionnaireSession,
+							})(tui, theme, keybindings, finish);
+						},
+						// Reserve space in Pi's editor dock; an overlay would block transcript scrolling.
+						{ overlay: false },
+					),
+					wait.cancelled,
+				]);
 
 				if (result === undefined) {
-					return resolveUndefinedResult(ctx, typed);
+					return await Promise.race([
+						resolveUndefinedResult(ctx, typed, wait.signal),
+						wait.cancelled.then((cancelled) => buildQuestionnaireResponse(cancelled, typed)),
+					]);
 				}
 
 				return buildQuestionnaireResponse(result, typed);
 			} finally {
-				emitAskUserBlockedEvent(pi, false);
+				wait.release();
+				pending.delete(wait.cancel);
 			}
 		},
 	});

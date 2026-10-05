@@ -23,20 +23,24 @@ async function registerFresh() {
 	const { registerAskUserQuestionTool } = await import("./ask-user-question.js");
 	const { pi, captured } = createMockPi();
 	registerAskUserQuestionTool(pi);
-	return captured.tools.get("ask_user_question")!;
+	return { tool: captured.tools.get("ask_user_question")!, pi, captured };
 }
 
 function ctxWithCustom(result: QuestionnaireResult | null) {
 	const custom = vi.fn(async () => result) as unknown as CustomFn;
-	return createMockCtx({ hasUI: true, ui: { custom } as never });
+	return createMockCtx({ hasUI: true, mode: "tui", ui: { custom } as never });
 }
 
 beforeEach(() => {
 	vi.resetModules();
+	vi.stubEnv("HERDR_ENV", "1");
+	vi.stubEnv("HERDR_PANE_ID", "test:pane");
+	vi.stubEnv("HERDR_SOCKET_PATH", "/tmp/not-a-real-herdr.sock");
 });
 
 afterEach(() => {
 	vi.doUnmock(SESSION_SPECIFIER);
+	vi.unstubAllEnvs();
 	vi.useRealTimers();
 });
 
@@ -45,7 +49,7 @@ describe("ask_user_question.execute — lazy session-graph load guards (#107)", 
 		vi.doMock(SESSION_SPECIFIER, () => {
 			throw new Error("Cannot find module '/replaced/store/pi-coding-agent/dist/index.js'");
 		});
-		const tool = await registerFresh();
+		const { tool, pi, captured } = await registerFresh();
 		const ctx = ctxWithCustom(null);
 		const stdout = mockStdout(true);
 		try {
@@ -64,6 +68,9 @@ describe("ask_user_question.execute — lazy session-graph load guards (#107)", 
 			expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("(cause:") });
 			expect(r?.content[0]).toMatchObject({ text: expect.not.stringContaining("declined") });
 			expect(stdout.stdoutWrite).not.toHaveBeenCalled();
+			expect(pi.exec).not.toHaveBeenCalled();
+			expect(captured.eventsEmitted.has("herdr:blocked")).toBe(false);
+			expect(captured.eventsEmitted.has("rpiv:ask-user:blocked")).toBe(false);
 		} finally {
 			stdout.restore();
 		}
@@ -72,18 +79,48 @@ describe("ask_user_question.execute — lazy session-graph load guards (#107)", 
 	it("returns error: stale_module_cache when the namespace resolves without a constructable class", async () => {
 		// The poisoned-cache shape: import succeeds but the class never evaluated.
 		vi.doMock(SESSION_SPECIFIER, () => ({ QuestionnaireSession: undefined }));
-		const tool = await registerFresh();
+		const { tool, pi, captured } = await registerFresh();
 		const ctx = ctxWithCustom(null);
 		const r = await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);
 		expect(r?.details).toMatchObject({ answers: [], cancelled: true, error: "stale_module_cache" });
+		expect(pi.exec).not.toHaveBeenCalled();
+		expect(captured.eventsEmitted.has("herdr:blocked")).toBe(false);
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("restart Pi") });
 		// Diagnostic includes the resolved namespace shape the issue asked for.
 		expect(r?.content[0]).toMatchObject({ text: expect.stringContaining("resolved namespace keys") });
 		expect(r?.content[0]).toMatchObject({ text: expect.not.stringContaining("declined") });
 	});
 
+	it.each(["abort", "session_start", "session_shutdown"])(
+		"%s during lazy import cannot open a late wait",
+		async (event) => {
+			let finish!: (module: { QuestionnaireSession: typeof Session }) => void;
+			class Session {}
+			const factory = vi.fn(
+				() =>
+					new Promise<{ QuestionnaireSession: typeof Session }>((resolve) => {
+						finish = resolve;
+					}),
+			);
+			vi.doMock(SESSION_SPECIFIER, factory);
+			const { tool, pi, captured } = await registerFresh();
+			const controller = new AbortController();
+			const ctx = ctxWithCustom(null);
+			const pending = tool.execute("tc", BASE_PARAMS, controller.signal, undefined, ctx);
+			await vi.waitFor(() => expect(factory).toHaveBeenCalled());
+			if (event === "abort") controller.abort();
+			else for (const handler of captured.events.get(event) ?? []) await handler({}, ctx);
+			finish({ QuestionnaireSession: Session });
+			expect((await pending).details).toMatchObject({ cancelled: true });
+			expect(ctx.ui.custom).not.toHaveBeenCalled();
+			expect(pi.exec).not.toHaveBeenCalled();
+			expect(captured.eventsEmitted.has("rpiv:ask-user:blocked")).toBe(false);
+			expect(captured.eventsEmitted.has("herdr:blocked")).toBe(false);
+		},
+	);
+
 	it("loads the real session graph and reaches ctx.ui.custom when the module is healthy", async () => {
-		const tool = await registerFresh();
+		const { tool } = await registerFresh();
 		const custom = vi.fn(async () => ({ answers: [], cancelled: true }));
 		const ctx = createMockCtx({ hasUI: true, ui: { custom } as never });
 		const r = await tool.execute?.("tc", BASE_PARAMS as never, undefined as never, undefined as never, ctx as never);

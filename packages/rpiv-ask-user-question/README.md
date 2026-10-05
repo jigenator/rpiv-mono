@@ -45,12 +45,18 @@ When the model asks several things at once, `Tab` moves between them and a Submi
 - **Editor-area questionnaire** — standard content renders at natural height, without an overlay, height cap, or custom pane scrolling. Pi owns transcript navigation; tall questions can fill the visible terminal. `Ctrl+]` optionally shrinks the pane to one row.
 - **Works outside the terminal too** — in RPC and ACP hosts such as the VS Code pendant or Zed the questionnaire walks through the host's native dialogs (notes are terminal-only and do not carry over), and in non-interactive runs the tool is removed from the model's tool list instead of failing every call.
 
+Inside a Herdr TUI pane, pending structured questionnaires report blocked state
+with `question` as the state text by default. Herdr's managed Pi integration must
+be active; use its `state_text` sidebar field. Other sidebar fields stay independent.
+See [runtime behavior](./docs/hosts.md#herdr-question-status) for cleanup and transport limits.
+
 ## Configuration
 
 Optional. Settings live in `~/.config/rpiv-ask-user-question/config.json`; the file is read, never written.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
+| `herdrStatus` | Show `question` while blocked in a Herdr TUI pane; `false` opts out. No subagent coupling. | `true` |
 | `collapseKey` | Key that collapses and expands the dialog. Accepts Pi keybinding ids such as `alt+o`; `"off"` disables the shortcut. | `"ctrl+]"` |
 | `guidance.description` | Full replacement for the tool description the model sees. A non-empty string replaces the built-in text entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line description of the tool in the system prompt — tune how eagerly the model asks. | built-in snippet |

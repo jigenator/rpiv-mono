@@ -29,6 +29,43 @@ After UI availability and questionnaire validation succeed, the package emits ex
 
 The BEL is best effort: if the synchronous terminal write fails, the questionnaire continues and its existing prompt/blocked lifecycle and result envelope are unchanged. The terminal configuration decides whether the BEL is audible, visual, or ignored. No BEL is emitted for missing UI, invalid questionnaires, or a failed TUI session load.
 
+### Herdr question status
+
+With Herdr's managed Pi integration active, a structured questionnaire in a Herdr
+TUI pane reports semantic **blocked** and visible state text **question** by default.
+Use Herdr's `state_text` sidebar field to display the label. Other sidebar fields
+(such as `$summary`) remain independent: RPIV does not read or compose subagent
+activity. Natural-language questions in chat do not trigger this feature.
+
+Waiting begins only after validation and successful UI loading. Answer, Esc, UI
+failure, actual tool-signal abort, session reset, and shutdown release only that
+wait's ownership. Cancellation uses Pi's custom-UI completion callback to close
+the pane. Releasing the last question reveals the current native state, never a
+saved previous state. Public RPIV events and the terminal bell remain independent
+of the [Herdr opt-out](./configuration.md#herdrstatus).
+
+Overlapping status leases are counted, so one completion cannot clear another
+question. **Batch questions in one call:** native Pi's non-overlay custom editor
+UI does not support multiple simultaneous questionnaires. This feature does not
+introduce a multi-dialog queue or change that host limitation. RPC and SDK hosts
+do not emit Herdr events or launch its CLI.
+
+Presentation uses a runtime-unique `rpiv:ask-user-question:*` metadata source,
+guarded by `agent=pi` and `applies_to_source=herdr:pi`. Only that source's blocked
+label is set or cleared; no semantic lifecycle reports or other labels are written.
+Calls use `pi.exec` argv, not a shell, with a one-second requested timeout, serialized
+and coalesced. Pending labels refresh every 10 seconds with a 30-second TTL. The
+refresh stops on the final release. Transport failures never fail or delay an
+answer; display updates are best effort and require a working Herdr connection.
+
+Shutdown allows up to 1.5 seconds for the final clear. Pi owns subprocess cleanup;
+its inspected 0.80.6 and 1.0.2 implementations may leave `exec` unresolved if a child
+ignores SIGTERM. RPIV does not start concurrent replacement processes in that case.
+The TTL bounds presentation from the **last server-accepted report**, not necessarily
+from shutdown: a delayed write can be accepted later. Abrupt process termination
+cannot guarantee semantic event cleanup; Herdr's native bridge/process detection
+remains responsible for semantic state.
+
 ### Non-interactive runs
 
 A `before_agent_start` hook reconciles the active tool set against `ctx.hasUI` before every

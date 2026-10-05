@@ -8,6 +8,7 @@ import {
 	formatKeySpecForDisplay,
 	loadConfig,
 	resolveCollapseKey,
+	resolveHerdrStatus,
 } from "./config.js";
 
 describe("formatKeySpecForDisplay", () => {
@@ -115,5 +116,14 @@ describe("loadConfig", () => {
 		const c = loadConfig();
 		expect(c.collapseKey).toBe("alt+o");
 		expect(c.guidance?.promptSnippet).toBe("x");
+	});
+});
+
+describe("resolveHerdrStatus", () => {
+	it.each([undefined, true, "false", 0, 1, null, [], {}])("defaults on for %j", (value) => {
+		expect(resolveHerdrStatus({ herdrStatus: value } as AskUserQuestionConfig)).toBe(true);
+	});
+	it("only literal false disables", () => {
+		expect(resolveHerdrStatus({ herdrStatus: false })).toBe(false);
 	});
 });

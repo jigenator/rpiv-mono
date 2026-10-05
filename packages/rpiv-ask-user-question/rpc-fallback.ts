@@ -20,6 +20,7 @@
  * `ROW_INTENT_META.other.autoAppendOnMultiSelect`.
  */
 
+import type { ExtensionUIDialogOptions } from "@earendil-works/pi-coding-agent";
 import { displayLabel, t } from "./state/i18n-bridge.js";
 import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams } from "./tool/types.js";
 
@@ -44,8 +45,8 @@ const MAX_PREVIEW_CHARS = 600;
  * gate that makes the shape trustworthy.
  */
 export type DialogUI = {
-	select: (title: string, options: string[]) => Promise<string | undefined>;
-	input: (title: string, placeholder?: string) => Promise<string | undefined>;
+	select: (title: string, options: string[], opts?: ExtensionUIDialogOptions) => Promise<string | undefined>;
+	input: (title: string, placeholder?: string, opts?: ExtensionUIDialogOptions) => Promise<string | undefined>;
 };
 
 /** True when the host implements the select/input dialog primitives. */
@@ -87,7 +88,22 @@ function buildPreviewBlock(question: QuestionData): string {
  * `QuestionAnswer` is produced per question otherwise, so the envelope is
  * identical to the TUI path's.
  */
-export async function runRpcQuestionnaire(ui: DialogUI, params: QuestionParams): Promise<QuestionnaireResult> {
+export async function runRpcQuestionnaire(
+	ui: DialogUI,
+	params: QuestionParams,
+	signal?: AbortSignal,
+): Promise<QuestionnaireResult> {
+	// Only the cancellable custom-UI backstop supplies a signal; preserve the
+	// two-argument calls used by existing RPC/SDK hosts otherwise.
+	if (signal) {
+		const original = ui;
+		ui = {
+			select: (title, options) =>
+				signal.aborted ? Promise.resolve(undefined) : original.select(title, options, { signal }),
+			input: (title, placeholder) =>
+				signal.aborted ? Promise.resolve(undefined) : original.input(title, placeholder, { signal }),
+		};
+	}
 	const answers: QuestionAnswer[] = [];
 	for (let qi = 0; qi < params.questions.length; qi++) {
 		const q = params.questions[qi];
