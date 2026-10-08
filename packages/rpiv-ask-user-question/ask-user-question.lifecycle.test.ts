@@ -1,30 +1,16 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import { createMockCtx, createMockPi } from "@juicesharp/rpiv-test-utils";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerAskUserQuestionTool } from "./ask-user-question.js";
-import type { AskUserQuestionConfig } from "./config.js";
 import type { QuestionnaireResult } from "./tool/types.js";
 
-const config = vi.hoisted(() => ({ value: {} as AskUserQuestionConfig }));
-vi.mock("./config.js", async (original) => ({
-	...(await original<typeof import("./config.js")>()),
-	loadConfig: () => config.value,
-}));
 const params = {
 	questions: [{ question: "Private question", header: "Pick", options: [{ label: "A" }, { label: "B" }] }],
 };
 const cancelled = { answers: [], cancelled: true };
 
-beforeEach(() => {
-	config.value = {};
-	vi.stubEnv("HERDR_ENV", "1");
-	vi.stubEnv("HERDR_PANE_ID", "test:pane");
-	vi.stubEnv("HERDR_SOCKET_PATH", "/tmp/not-a-real-herdr.sock");
-	vi.stubEnv("HERDR_BIN_PATH", "/mock/herdr");
-});
 afterEach(() => {
-	vi.unstubAllEnvs();
 	vi.restoreAllMocks();
 });
 
@@ -37,7 +23,7 @@ function setup(custom: ExtensionUIContext["custom"], mode = "tui") {
 	const lifecycle = async (name: string) => {
 		for (const handler of mock.captured.events.get(name) ?? []) await handler({}, ctx);
 	};
-	const edges = (channel = "herdr:blocked") => mock.captured.eventsEmitted.get(channel) ?? [];
+	const edges = (channel = "rpiv:ask-user:blocked") => mock.captured.eventsEmitted.get(channel) ?? [];
 	return { ...mock, ctx, tool, run, lifecycle, edges };
 }
 
@@ -76,8 +62,8 @@ function deferredCustom() {
 	return { custom, finish: (result = cancelled) => resolve(result), resolver: () => resolve };
 }
 
-describe("questionnaire Herdr lifecycle", () => {
-	it.each(["answer", "escape", "abort"])("default-on: real component %s closes exactly one lease", async (action) => {
+describe("questionnaire wait lifecycle", () => {
+	it.each(["answer", "escape", "abort"])("real component %s closes exactly one wait", async (action) => {
 		const host = customHost();
 		const test = setup(host.custom);
 		const controller = new AbortController();
@@ -91,13 +77,13 @@ describe("questionnaire Herdr lifecycle", () => {
 		expect(response.details).toMatchObject({ cancelled: action !== "answer" });
 		expect(host.done).toHaveBeenCalledOnce();
 		expect(test.edges()).toEqual([{ active: true }, { active: false }]);
-		expect(test.edges("rpiv:ask-user:blocked")).toEqual([{ active: true }, { active: false }]);
 		expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
 		await test.lifecycle("session_shutdown");
-		expect(JSON.stringify(vi.mocked(test.pi.exec).mock.calls)).not.toContain("Private question");
+		expect(test.pi.exec).not.toHaveBeenCalled();
+		expect([...test.captured.eventsEmitted.keys()].sort()).toEqual(["rpiv:ask-user:blocked", "rpiv:ask-user:prompt"]);
 	});
 
-	it("UI rejection releases both owned signals", async () => {
+	it("UI rejection releases the public blocked signal", async () => {
 		const test = setup(
 			vi.fn(async () => {
 				throw new Error("UI failed");
@@ -108,7 +94,7 @@ describe("questionnaire Herdr lifecycle", () => {
 		await test.lifecycle("session_shutdown");
 	});
 
-	it("pre-abort, no UI and invalid params never open a lease or UI", async () => {
+	it("pre-abort, no UI and invalid params never open a wait or UI", async () => {
 		const custom = vi.fn();
 		const test = setup(custom);
 		const controller = new AbortController();
@@ -118,39 +104,11 @@ describe("questionnaire Herdr lifecycle", () => {
 		await test.tool.execute("tc", { questions: [] }, undefined, undefined, test.ctx);
 		expect(custom).not.toHaveBeenCalled();
 		expect(test.edges()).toEqual([]);
-		expect(test.edges("rpiv:ask-user:blocked")).toEqual([]);
-		expect(test.pi.exec).not.toHaveBeenCalled();
-	});
-
-	it("opt-out preserves public events and config changes cannot unbalance an open wait", async () => {
-		config.value = { herdrStatus: false };
-		const host = deferredCustom();
-		const test = setup(host.custom);
-		const first = test.run();
-		await vi.waitFor(() => expect(host.custom).toHaveBeenCalledOnce());
-		config.value = {};
-		host.finish();
-		await first;
-		expect(test.edges()).toEqual([]);
-		expect(test.edges("rpiv:ask-user:blocked")).toEqual([{ active: true }, { active: false }]);
-		const second = test.run();
-		await vi.waitFor(() => expect(host.custom).toHaveBeenCalledTimes(2));
-		config.value = { herdrStatus: false };
-		host.finish();
-		await second;
-		expect(test.edges()).toEqual([{ active: true }, { active: false }]);
-		await test.lifecycle("session_shutdown");
-	});
-
-	it.each(["sdk", "rpc"])("no Herdr work in %s mode", async (mode) => {
-		const test = setup(vi.fn(async () => cancelled) as never, mode);
-		await test.run();
-		expect(test.edges()).toEqual([]);
 		expect(test.pi.exec).not.toHaveBeenCalled();
 	});
 
 	it.each(["session_shutdown", "session_start"])(
-		"%s cancels owned waits; late completion cannot touch a new lease",
+		"%s cancels owned waits; late completion cannot touch a new wait",
 		async (event) => {
 			const host = deferredCustom();
 			const test = setup(host.custom);
@@ -172,7 +130,7 @@ describe("questionnaire Herdr lifecycle", () => {
 		},
 	);
 
-	it("shutdown uses the real custom UI done callback, not just a badge reset", async () => {
+	it("shutdown uses the real custom UI done callback, not just an event reset", async () => {
 		const host = customHost();
 		const test = setup(host.custom);
 		const pending = test.run();
@@ -204,22 +162,6 @@ describe("questionnaire Herdr lifecycle", () => {
 		await test.lifecycle("session_shutdown");
 	});
 
-	it("a hung transport never blocks an answer or bounded shutdown", async () => {
-		vi.useFakeTimers();
-		try {
-			const test = setup(vi.fn(async () => cancelled) as never);
-			vi.mocked(test.pi.exec).mockImplementation(() => new Promise(() => {}));
-			expect((await test.run()).details).toMatchObject({ cancelled: true });
-			const shutdown = test.lifecycle("session_shutdown");
-			await vi.advanceTimersByTimeAsync(1500);
-			await shutdown;
-			expect(test.edges()).toEqual([{ active: true }, { active: false }]);
-			expect(test.pi.exec).toHaveBeenCalledOnce();
-		} finally {
-			vi.useRealTimers();
-		}
-	});
-
 	it("legacy deferred RPC fallback keeps the public bracket until the last dialog resolves", async () => {
 		const test = setup(vi.fn(async () => undefined) as never, "legacy");
 		let finish!: (answer: string) => void;
@@ -235,7 +177,6 @@ describe("questionnaire Herdr lifecycle", () => {
 		expect(test.edges("rpiv:ask-user:blocked")).toEqual([{ active: true }]);
 		finish("1. A");
 		await pending;
-		expect(test.edges("rpiv:ask-user:blocked")).toEqual([{ active: true }, { active: false }]);
-		expect(test.edges()).toEqual([]);
+		expect(test.edges()).toEqual([{ active: true }, { active: false }]);
 	});
 });

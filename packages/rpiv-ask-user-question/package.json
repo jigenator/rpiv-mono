@@ -34,7 +34,6 @@
 		"rpc-fallback.ts",
 		"config.ts",
 		"events.ts",
-		"herdr-status.ts",
 		"question-wait.ts",
 		"index.ts",
 		"reconcile.ts",
