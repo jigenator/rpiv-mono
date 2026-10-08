@@ -7,13 +7,13 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added
+### Removed
 
-- Default-on Herdr question status inside TUI panes, with `herdrStatus: false` opt-out. Publish only blocked=`question` metadata, independently of other sidebar fields.
+- Herdr status integration and the `herdrStatus` option (existing config keys are ignored). This package no longer emits `herdr:blocked` or publishes sidebar metadata; presentation moves to industrial-os `pi/herdr-sidebar`, which observes pending `ask_user_question` tool calls. Questionnaire behavior and public `rpiv:ask-user:blocked` events are unchanged.
 
 ### Fixed
 
-- Release owned question status on actual signal abort, reset, and shutdown; close custom UI through the host completion callback. Keep the public blocked event active throughout delayed legacy RPC fallback.
+- Cancel pending questionnaires on actual signal abort, reset, and shutdown; close custom UI through the host completion callback. Keep the public blocked event active throughout delayed legacy RPC fallback.
 - Render `ask_user_question` in Pi's space-reserving editor area, not an overlay. Keep the standard questionnaire at natural height with width-safe rendering; leave viewport and transcript navigation to the host without terminal-height caps or custom pane scrolling.
 - Keep collapse as an optional one-row shrink with draft preservation and Kitty repeat/release protection; remove the overlay handle, hide effect, and raw terminal escape listener.
 

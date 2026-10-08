@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type AskUserQuestionConfig,
 	COLLAPSE_KEY_OFF,
@@ -8,7 +8,7 @@ import {
 	formatKeySpecForDisplay,
 	loadConfig,
 	resolveCollapseKey,
-	resolveHerdrStatus,
+	validateGuidanceFields,
 } from "./config.js";
 
 describe("formatKeySpecForDisplay", () => {
@@ -117,13 +117,14 @@ describe("loadConfig", () => {
 		expect(c.collapseKey).toBe("alt+o");
 		expect(c.guidance?.promptSnippet).toBe("x");
 	});
-});
 
-describe("resolveHerdrStatus", () => {
-	it.each([undefined, true, "false", 0, 1, null, [], {}])("defaults on for %j", (value) => {
-		expect(resolveHerdrStatus({ herdrStatus: value } as AskUserQuestionConfig)).toBe(true);
-	});
-	it("only literal false disables", () => {
-		expect(resolveHerdrStatus({ herdrStatus: false })).toBe(false);
+	it("ignores unknown config keys without warnings", () => {
+		mkdirSync(join(home, ".config", "rpiv-ask-user-question"), { recursive: true });
+		writeFileSync(configPath, JSON.stringify({ obsoleteSetting: false, collapseKey: "alt+o" }));
+		const warn = vi.spyOn(console, "warn");
+		const config = loadConfig();
+		expect(resolveCollapseKey(config)).toBe("alt+o");
+		expect(validateGuidanceFields(config.guidance)).toEqual({});
+		expect(warn).not.toHaveBeenCalled();
 	});
 });

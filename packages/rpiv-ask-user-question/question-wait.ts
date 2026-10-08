@@ -5,7 +5,7 @@ import type { QuestionnaireResult } from "./tool/types.js";
 export const cancelledQuestionnaire = (): QuestionnaireResult => ({ answers: [], cancelled: true });
 
 /** One owned wait: actual abort, reset and late completion all converge here. */
-export function createQuestionWait(pi: ExtensionAPI, signal: AbortSignal | undefined, releaseHerdr: () => void) {
+export function createQuestionWait(pi: ExtensionAPI, signal: AbortSignal | undefined) {
 	const controller = new AbortController();
 	let closed = false;
 	let closeUI: (() => void) | undefined;
@@ -19,7 +19,6 @@ export function createQuestionWait(pi: ExtensionAPI, signal: AbortSignal | undef
 		closed = true;
 		signal?.removeEventListener("abort", cancel);
 		closeUI = undefined;
-		releaseHerdr();
 		pi.events.emit(ASK_USER_BLOCKED_EVENT, { active: false });
 	}
 

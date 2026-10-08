@@ -9,8 +9,6 @@ export const COLLAPSE_KEY_OFF: CollapseKeySpec = "off";
 
 export interface AskUserQuestionConfig {
 	guidance?: GuidanceFields;
-	/** Default-on inside a Herdr TUI pane. Only literal false opts out. */
-	herdrStatus?: boolean;
 	/**
 	 * Key spec for the collapse/expand shortcut, in the same format as pi-coding-agent
 	 * keybinding ids (`modifier+key`, e.g. `ctrl+]`, `alt+o`, `ctrl+shift+h`). Defaults
@@ -93,10 +91,6 @@ export function formatKeySpecForDisplay(spec: CollapseKeySpec): string {
 				(part.length <= 1 ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)),
 		)
 		.join("+");
-}
-
-export function resolveHerdrStatus(config: Pick<AskUserQuestionConfig, "herdrStatus">): boolean {
-	return config.herdrStatus !== false;
 }
 
 export function loadConfig(): AskUserQuestionConfig {

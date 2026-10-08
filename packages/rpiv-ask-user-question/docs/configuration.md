@@ -18,7 +18,6 @@ A complete example:
 ```json
 {
   "collapseKey": "alt+o",
-  "herdrStatus": true,
   "guidance": {
     "description": "Ask the user structured questions whenever requirements are ambiguous.",
     "promptSnippet": "Ask me before guessing on anything ambiguous",
@@ -59,26 +58,10 @@ type are likewise dropped back to their default without a warning.
 
 | Setting | What it does | Default |
 | --- | --- | --- |
-| `herdrStatus` | Report a pending structured questionnaire as Herdr blocked state with `question` text. | `true` inside a Herdr TUI pane |
 | `collapseKey` | Key that collapses and expands the questionnaire pane. | `"ctrl+]"` |
 | `guidance.description` | Full text of the tool description the model sees. Replaces the built-in default entirely — no merging. | built-in description |
 | `guidance.promptSnippet` | One-line snippet describing the tool in the system prompt. | built-in snippet |
 | `guidance.promptGuidelines` | List of usage guidelines given to the model. | 4 built-in guidelines |
-
-### `herdrStatus`
-
-Default-on **inside a Herdr pane**, not merely when Herdr is installed. Set
-`"herdrStatus": false` to opt out. Missing or wrong-type values use `true` (the
-string `"false"` is not an opt-out). Read once per questionnaire; changing the
-file during a wait affects only the next call. Public `rpiv:ask-user:blocked`
-events are independent of this option.
-
-Requires `ctx.mode === "tui"`, UI availability, `HERDR_ENV=1`, a nonempty
-`HERDR_PANE_ID`, and a usable `HERDR_SOCKET_PATH` (absolute on Unix). The managed
-Herdr Pi integration owns semantic state; RPIV sends balanced `herdr:blocked`
-events and publishes only the fixed `blocked=question` presentation. No question
-text, choices, summary, title, workspace metadata, or subagent data is sent.
-See [hosts.md](./hosts.md#herdr-question-status) for lifecycle and failure behavior.
 
 ### `collapseKey`
 
@@ -127,13 +110,11 @@ tool, so changes take effect on the next Pi restart.
 
 | Variable | Effect |
 | --- | --- |
-| `HERDR_ENV`, `HERDR_PANE_ID`, `HERDR_SOCKET_PATH` | Identify the enclosing Herdr pane; absent context disables Herdr work. |
-| `HERDR_BIN_PATH` | Pane-injected Herdr executable; falls back to `herdr` on PATH. |
 | `XDG_CONFIG_HOME` | Relocates the config directory, as described above. Must be absolute. |
 
 `LANG` and `LC_ALL` influence the dialog language, but they are read by
 [`@juicesharp/rpiv-i18n`](https://www.npmjs.com/package/@juicesharp/rpiv-i18n) rather than
 by this package — see [localization.md](./localization.md).
 
-The package makes no model calls, so it needs no
+No other environment variables are read. The package makes no model calls, so it needs no
 API keys or model settings of its own.

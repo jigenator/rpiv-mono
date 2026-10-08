@@ -1,13 +1,12 @@
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { TUI } from "@earendil-works/pi-tui";
-import { loadConfig, resolveCollapseKey, resolveHerdrStatus, validateGuidanceFields } from "./config.js";
+import { loadConfig, resolveCollapseKey, validateGuidanceFields } from "./config.js";
 import {
 	ASK_USER_BLOCKED_EVENT,
 	ASK_USER_PROMPT_EVENT,
 	type AskUserBlockedEventPayload,
 	type AskUserPromptEventPayload,
 } from "./events.js";
-import { createHerdrQuestionStatus } from "./herdr-status.js";
 import { cancelledQuestionnaire, createQuestionWait } from "./question-wait.js";
 // Static import is fine — rpc-fallback pulls only types + the i18n bridge,
 // none of the ~560ms TUI render graph that QuestionnaireSession lazy-loads.
@@ -256,14 +255,12 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 	const guidance = validateGuidanceFields(loadConfig().guidance);
-	const herdr = createHerdrQuestionStatus(pi);
 	const pending = new Set<() => void>();
 	let generation = 0;
-	const reset = async () => {
+	const reset = () => {
 		generation++;
 		for (const cancel of pending) cancel();
 		pending.clear();
-		await herdr.flush();
 	};
 	pi.on("session_shutdown", reset);
 	pi.on("session_start", reset);
@@ -327,7 +324,7 @@ export function registerAskUserQuestionTool(pi: ExtensionAPI): void {
 			}
 
 			emitAskUserBlockedEvent(pi, true);
-			const wait = createQuestionWait(pi, signal, herdr.acquire(ctx, resolveHerdrStatus(config)));
+			const wait = createQuestionWait(pi, signal);
 			pending.add(wait.cancel);
 			try {
 				if (wait.signal.aborted) return buildQuestionnaireResponse(cancelledQuestionnaire(), typed);
