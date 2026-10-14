@@ -4,6 +4,13 @@ import type { QuestionAnswer, QuestionnaireResult, QuestionParams } from "./type
 export const DECLINE_MESSAGE = "User declined to answer questions";
 export const ENVELOPE_PREFIX = "User has answered your questions:";
 export const ENVELOPE_SUFFIX = "You can now continue with the user's answers in mind.";
+/**
+ * Rides before the suffix when any answer was typed. A typed answer is often a
+ * question back ("what does this mean?"); without this, models resolve it only in
+ * their reasoning and re-ask, so the user never sees the explanation.
+ */
+export const TYPED_ANSWER_NOTE =
+	"Some answers were typed by the user instead of picked from your options. If a typed answer asks a question or asks you to explain something, answer it in visible message text, not only in your thinking, before you continue or ask more questions.";
 
 /**
  * Map a `QuestionnaireResult` (or null/cancelled) to the LLM-facing tool envelope.
@@ -36,7 +43,9 @@ export function buildQuestionnaireResponse(result: QuestionnaireResult | null | 
 	if (segments.length === 0) {
 		return buildToolResult(DECLINE_MESSAGE, { answers: result.answers, cancelled: true });
 	}
-	return buildToolResult(`${ENVELOPE_PREFIX} ${segments.join(" ")} ${ENVELOPE_SUFFIX}`, result);
+	const typed = result.answers.some((a) => a.kind === "custom" && !!a.answer);
+	const suffix = typed ? `${TYPED_ANSWER_NOTE} ${ENVELOPE_SUFFIX}` : ENVELOPE_SUFFIX;
+	return buildToolResult(`${ENVELOPE_PREFIX} ${segments.join(" ")} ${suffix}`, result);
 }
 
 /**

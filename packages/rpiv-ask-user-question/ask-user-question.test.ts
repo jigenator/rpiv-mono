@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildItemsForQuestion, buildQuestionnaireResponse, buildToolResult } from "./ask-user-question.js";
+import { ENVELOPE_SUFFIX, TYPED_ANSWER_NOTE } from "./tool/response-envelope.js";
 import type { QuestionnaireResult, QuestionParams } from "./tool/types.js";
 
 describe("buildItemsForQuestion", () => {
@@ -269,6 +270,7 @@ describe("buildQuestionnaireResponse — completed", () => {
 		const r = buildQuestionnaireResponse(result, params);
 		expect(r.content[0].text).toContain('"Free?"="my custom"');
 		expect(r.content[0].text).not.toContain("User answered:");
+		expect(r.content[0].text).toContain(`${TYPED_ANSWER_NOTE} ${ENVELOPE_SUFFIX}`);
 	});
 
 	it("empty custom answer renders as (no input) in <A> position", () => {
@@ -290,6 +292,7 @@ describe("buildQuestionnaireResponse — completed", () => {
 		};
 		const r = buildQuestionnaireResponse(result, params);
 		expect(r.content[0].text).toContain('"Free?"="(no input)"');
+		expect(r.content[0].text).not.toContain(TYPED_ANSWER_NOTE);
 	});
 
 	it("notes are echoed as 'user notes: <text>' AND preserved in details", () => {
@@ -673,6 +676,7 @@ describe("buildQuestionnaireResponse — preview echo + envelope wrapper shape (
 		const r = buildQuestionnaireResponse(result, params);
 		expect(r.content[0].text).toMatch(/^User has answered your questions:/);
 		expect(r.content[0].text).toMatch(/You can now continue with the user's answers in mind\.$/);
+		expect(r.content[0].text).not.toContain(TYPED_ANSWER_NOTE);
 	});
 });
 
