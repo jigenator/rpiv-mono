@@ -13,6 +13,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Tell the model, in the tool description and prompt guidelines, that the user cannot see its thinking, so any explanation the questions depend on must be visible message text sent before the call. Models were drafting that context only in their reasoning and then asking about "the rules above".
 - Cancel pending questionnaires on actual signal abort, reset, and shutdown; close custom UI through the host completion callback. Keep the public blocked event active throughout delayed legacy RPC fallback.
 - Render `ask_user_question` in Pi's space-reserving editor area, not an overlay. Keep the standard questionnaire at natural height with width-safe rendering; leave viewport and transcript navigation to the host without terminal-height caps or custom pane scrolling.
 - Keep collapse as an optional one-row shrink with draft preservation and Kitty repeat/release protection; remove the overlay handle, hide effect, and raw terminal escape listener.

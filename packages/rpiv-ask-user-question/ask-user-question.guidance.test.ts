@@ -7,6 +7,7 @@ import {
 	DEFAULT_PROMPT_SNIPPET,
 	DEFAULT_TOOL_DESCRIPTION,
 	registerAskUserQuestionTool,
+	VISIBLE_CONTEXT_RULE,
 } from "./ask-user-question.js";
 
 const TOOL_NAME = "ask_user_question";
@@ -37,6 +38,15 @@ it("describes the all-question custom-answer contract in the registered tool", (
 	const tool = captured.tools.get(TOOL_NAME)!;
 	expect(tool.description).toContain('automatically appended "Type something." row on every question');
 	expect(tool.description).toContain("reserved labels are rejected at runtime");
+});
+
+it("tells the model to put question context in visible text, not thinking", () => {
+	const { pi, captured } = createMockPi();
+	registerAskUserQuestionTool(pi);
+	const tool = captured.tools.get(TOOL_NAME)!;
+	expect(VISIBLE_CONTEXT_RULE).toContain("cannot see your thinking");
+	expect(tool.description).toContain(VISIBLE_CONTEXT_RULE);
+	expect(tool.promptGuidelines).toContain(VISIBLE_CONTEXT_RULE);
 });
 
 describe("registerAskUserQuestionTool — guidance overrides", () => {
