@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import rootPkg from "../../../../package.json" with { type: "json" };
+import pkg from "../../../rpiv-pi/package.json" with { type: "json" };
 
 const PI_PKG = "@earendil-works/pi-coding-agent";
 
@@ -15,10 +15,6 @@ export interface Compat {
 }
 
 export function loadCompat(): Compat {
-	const pkgUrl = new URL("../../../rpiv-pi/package.json", import.meta.url);
-	const rootPkgUrl = new URL("../../../../package.json", import.meta.url);
-	const pkg = JSON.parse(readFileSync(fileURLToPath(pkgUrl), "utf8"));
-	const rootPkg = JSON.parse(readFileSync(fileURLToPath(rootPkgUrl), "utf8"));
 	const tested: unknown = rootPkg.devDependencies?.[PI_PKG];
 	if (typeof tested !== "string" || tested.length === 0) {
 		throw new Error(`compat: could not read devDependencies["${PI_PKG}"] from root package.json`);
