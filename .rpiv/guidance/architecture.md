@@ -9,7 +9,7 @@ rpiv-mono/
 ├── packages/
 │   ├── rpiv-pi/                  — Umbrella: extension runtime + skills + agents (zero tools)
 │   ├── rpiv-<feature>/           — One Pi extension per directory; npm name @juicesharp/rpiv-<feature>
-│   ├── rpiv-site/                — Astro 5 marketing site (private). Excluded from root tsconfig + coverage scope
+│   ├── rpiv-site/                — Astro 7 marketing site (private). Excluded from root tsconfig + coverage scope
 │   ├── rpiv-telemetry/           — Private Pi extension: MLflow observability (private opt-in; not in siblings.ts)
 │   └── test-utils/               — Private workspace package: shared test fixtures (not published)
 ├── test/                         — Repo-wide Vitest setup (homedir stub + env hygiene + pi-ai//compat mocks + beforeEach singleton resets)

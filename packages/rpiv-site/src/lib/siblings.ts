@@ -1,5 +1,9 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import advisor from "../../../rpiv-advisor/package.json" with { type: "json" };
+import args from "../../../rpiv-args/package.json" with { type: "json" };
+import askUserQuestion from "../../../rpiv-ask-user-question/package.json" with { type: "json" };
+import btw from "../../../rpiv-btw/package.json" with { type: "json" };
+import todo from "../../../rpiv-todo/package.json" with { type: "json" };
+import webTools from "../../../rpiv-web-tools/package.json" with { type: "json" };
 
 export interface Sibling {
 	pkg: string; // e.g. @juicesharp/rpiv-advisor
@@ -42,10 +46,15 @@ interface PkgJson {
 	peerDependencies?: Record<string, string>;
 }
 
-function readPkg(name: SiblingName): PkgJson {
-	const url = new URL(`../../../${name}/package.json`, import.meta.url);
-	return JSON.parse(readFileSync(fileURLToPath(url), "utf8"));
-}
+// Static imports survive relocation into Astro's prerender chunks.
+const PACKAGES: Record<SiblingName, PkgJson> = {
+	"rpiv-advisor": advisor,
+	"rpiv-args": args,
+	"rpiv-ask-user-question": askUserQuestion,
+	"rpiv-btw": btw,
+	"rpiv-todo": todo,
+	"rpiv-web-tools": webTools,
+};
 
 /** Strip scopes from peer-dep names; drop internal sibling co-deps so the
  * catalog peer signature reads as "external runtime weight" only. */
@@ -58,7 +67,7 @@ function shortPeers(peers: Record<string, string> | undefined): string[] {
 
 export function loadSiblings(): Sibling[] {
 	return SIBLING_NAMES.map((name) => {
-		const json = readPkg(name);
+		const json = PACKAGES[name];
 		return {
 			pkg: json.name,
 			name,
